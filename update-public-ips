@@ -15,7 +15,11 @@ aws ec2 describe-instances  --filters "Name=tag:Name,Values=${NAME_TAG_FILTER}" 
 
 while read line ; do
   IP=$(strip_quotes $(echo $line | jq -c .PublicIpAddress))
+  [ -z "$IP" -o "null" = "$IP" ] && continue
+
   NAME=$(strip_quotes $(echo $line | jq -c .Tags[].Value))
+  [ -z "$NAME" -o "null" = "$NAME" ] && continue
+
   sed -i.bk -e "s/^.* $NAME/$IP $NAME/g" /etc/hosts
   echo "$NAME now has the public IP address: $IP"
 done < "$TMP_DATA"
