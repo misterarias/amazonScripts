@@ -1,0 +1,23 @@
+#!/bin/bash
+
+[ "$(whoami)" != "root" ] && \
+  echo "You need to have superpowers to execute this script" && \
+  exit 1
+
+strip_quotes() {
+  local string="$1"
+  echo $string | sed -e 's/^"//g' -e 's/"$//g'
+}
+
+TMP_DATA=$(mktemp /tmp/.XXXXX)
+NAME_TAG_FILTER="${1:-ambari-worker*}"
+aws ec2 describe-instances  --filters "Name=tag:Name,Values=${NAME_TAG_FILTER}" | jq -c  .Reservations[].Instances[] > "$TMP_DATA"
+
+while read line ; do
+  IP=$(strip_quotes $(echo $line | jq -c .PublicIpAddress))
+  NAME=$(strip_quotes $(echo $line | jq -c .Tags[].Value))
+  sed -i.bk -e "s/^.* $NAME/$IP $NAME/g" /etc/hosts
+  echo "$NAME now has the public IP address: $IP"
+done < "$TMP_DATA"
+
+rm "$TMP_DATA"
