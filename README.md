@@ -2,6 +2,13 @@
 
 Collection of useful and/or funny scripts to manage AWS instances and local environments
 
+## Requirements
+
+* [AWS cli tools][https://aws.amazon.com/cli/]
+* [jq][https://stedolan.github.io/jq/]
+
+## Scripts
+
 * update-public-ips
 
 Assuming you have entries on your `/etc/hosts` for some instances, update that entries with the new public IP.
