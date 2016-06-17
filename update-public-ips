@@ -1,16 +1,23 @@
 #!/bin/bash
 
-[ "$(whoami)" != "root" ] && \
-  echo "You need to have superpowers to execute this script" && \
-  exit 1
-
 strip_quotes() {
   local string="$1"
   echo $string | sed -e 's/^"//g' -e 's/"$//g'
 }
 
+# Set to non-zero to activate
+DRYRUN=${DRYRUN:-0}
+if [ "$DRYRUN" != "0" ] ; then
+  echo "Dry-run, nothing will be changed"
+elif [ "$(whoami)" != "root" ] ; then
+  echo "You need to have superpowers to execute this script"
+  exit 1
+fi
+
 TMP_DATA=$(mktemp /tmp/.XXXXX)
 NAME_TAG_FILTER="${1:-ambari-worker*}"
+echo "$NAME_TAG_FILTER" | grep -q '*' || echo "Your 'Name' tag does not look like a filter (no wildcard)"
+
 aws ec2 describe-instances  --filters "Name=tag:Name,Values=${NAME_TAG_FILTER}" | jq -c  .Reservations[].Instances[] > "$TMP_DATA"
 
 while read line ; do
@@ -20,8 +27,14 @@ while read line ; do
   NAME=$(strip_quotes $(echo $line | jq -c .Tags[].Value))
   [ -z "$NAME" -o "null" = "$NAME" ] && continue
 
-  sed -i.bk -e "s/^.* $NAME/$IP $NAME/g" /etc/hosts
-  echo "$NAME now has the public IP address: $IP"
+  PRIVATE_DNS_NAME=$(strip_quotes $(echo $line | jq -c .PrivateDnsName))
+  [ -z "$PRIVATE_DNS_NAME" -o "null" = "$PRIVATE_DNS_NAME" ] && \
+    PRIVATE_DNS_NAME="" # reset to zero, I don't care so much
+
+  NEW_ENTRY="$IP $NAME $PRIVATE_DNS_NAME"
+  [ "$DRYRUN" = "0" ] && \
+    sed -i.bk -e "s/^.* $NAME/${NEW_ENTRY}/g" /etc/hosts
+  echo "$NEW_ENTRY"
 done < "$TMP_DATA"
 
 rm "$TMP_DATA"
