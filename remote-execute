@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# remove nasty AWS quoting
+strip_quotes() {
+  local string="$1"
+  echo $string | sed -e 's/^"//g' -e 's/"$//g'
+}
+
+# Wrapper method for executing any command on a remote server
+remote_execute() {
+    local host=$1
+    shift
+
+    INTERPRETER="sudo bash"
+    LOCAL_BASE64_COMMAND="base64"
+    if [ "Darwin" = "$(uname -s)" ] ; then
+        LOCAL_BASE64_COMMAND="gbase64" # This command below comes from the "coreutils" tap in Homebrew
+    fi
+
+    # Pack the command in a shell script, to be sent to the remote server
+    TMP_FILE=$(mktemp .tmpXXXX)
+    cat > "${TMP_FILE}" <<EOF
+    #!/bin/sh
+    printf "\nResult of '$*' executed in '$host'...\n"
+    $*
+EOF
+
+    # Using base64 packing/unpacking, we can run any script easily on the remote server
+    ssh -A -tt ${host} "echo $(${LOCAL_BASE64_COMMAND} -w0 "${TMP_FILE}") | base64 -d | ${INTERPRETER}"
+    rm -rf "${TMP_FILE}"
+}
+
+# Param check
+[ $# -lt 2 ] && \
+  echo "[ERROR] Syntax is:" && \
+  echo "$0 <name_tag_filter> <command_to_execute>" && \
+  exit 1
+
+# Set to non-zero to activate
+DRYRUN=${DRYRUN:-0}
+
+NAME_TAG_FILTER="${1}"
+echo "$NAME_TAG_FILTER" | grep -q '*' || echo "[WARNING] Your 'Name' tag does not look like a filter (no wildcard)"
+shift
+
+COMMAND="$*"
+
+TMP_DATA=$(mktemp /tmp/.XXXXX)
+aws ec2 describe-instances  --filters "Name=tag:Name,Values=${NAME_TAG_FILTER}" | jq -c  .Reservations[].Instances[] > "$TMP_DATA"
+while read line ; do
+  (
+    NAME=$(strip_quotes $(echo $line | jq -c .Tags[].Value))
+    [ -z "$NAME" -o "null" = "$NAME" ] && continue
+
+    if [ "$DRYRUN" = "0" ] ; then
+      remote_execute $NAME $COMMAND
+    else
+      echo "Dry-run: would execute $COMMAND in $NAME"
+    fi
+  ) &
+done < "$TMP_DATA"
+wait
+
+rm "$TMP_DATA"
