@@ -33,7 +33,12 @@ while read line ; do
 
   NEW_ENTRY="$IP $NAME $PRIVATE_DNS_NAME"
   [ "$DRYRUN" = "0" ] && \
-    sed -i.bk -e "s/^.* $NAME/${NEW_ENTRY}/g" /etc/hosts
+    if grep -q "$NAME" /etc/hosts ; then
+      # assume that private dns start with ip-*
+      sed -i.bk -e "s/^.* $NAME ip-.*/${NEW_ENTRY}/g" /etc/hosts
+    else
+      echo "$NEW_ENTRY" >> /etc/hosts
+    fi
   echo "$NEW_ENTRY"
 done < "$TMP_DATA"
 
